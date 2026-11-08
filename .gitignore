@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+private/
+*.pdf
+*.docx
+*.sqlite3
+*.sqlite3-*
+data/
+__pycache__/
+.pytest_cache/
+.streamlit/secrets.toml
+application_sites.json

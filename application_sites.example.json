@@ -1,0 +1,11 @@
+{
+  "allowlisted_domains": {
+    "careers.example.org": {
+      "name": "input[name='full_name']",
+      "email": "input[type='email']",
+      "cv": "input[type='file']",
+      "submit": "button[type='submit']",
+      "success_text": "Application received"
+    }
+  }
+}
