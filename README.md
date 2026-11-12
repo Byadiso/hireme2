@@ -162,3 +162,26 @@ submitted automatically. Original CV stays in Streamlit session state, not the Z
 confirm the CV's factual accuracy, download DOCX/PDF, then apply manually through
 its official application page. Automated submission is not included: it would require
 separate employer-specific integration and explicit opt-in/approval.
+
+
+## Version 3.0 improvements: job freshness and CV tailoring
+
+- Both dashboard discovery and scheduled agent runs **exclude jobs without a verified timezone-aware publication date**, and jobs older than 7 x 24 hours. Adzuna queries include `max_days_old=7`, with a second local verification gate. CSV imports must include `posted_at` (ISO 8601 with timezone, e.g. `2026-11-08T12:00:00Z`); undated rows are excluded. `original_posted_at`, when supplied, takes precedence over repost dates.
+- Existing database rows are migrated to retain `posted_at`. Old, undated jobs are hidden from active discovery and CV tailoring; previously submitted or prepared applications remain visible for tracking.
+- AI tailoring now receives the original CV context so it can use skills supported elsewhere in the CV. Proposed rewrites still undergo a deterministic safety check, with accepted/rejected counts shown in the dashboard. No invented skills, metrics or credentials are permitted.
+- AI rewrites require a configured LLM provider. Without one, the agent still produces a source-preserving, reordered CV; it cannot guarantee substantive rewriting. The generated documents must be reviewed before use.
+- Date filtering verifies feed-provided timestamps; it does not independently verify employer websites or detect every disguised repost.
+
+
+## Version 3.1: CV links and strict seven-day visibility
+
+- DOCX hyperlink relationship targets and PDF URI annotations are extracted into the CV text, even when the displayed text is only “GitHub” or “LinkedIn”. URLs found in the CV are preserved as **clickable hyperlinks** in both exported DOCX and PDF. The application does not guess or invent missing profile URLs.
+- AI is instructed to make only meaningful, evidence-backed edits and cannot rewrite lines containing portfolio links. The change preview and explicit candidate approval remain mandatory.
+- Freshness uses the oldest verified date among `original_posted_at` and `posted_at`. Both are persisted in the database; older saved jobs are hidden from the active dashboard even if they were previously submitted. This is a strict visibility rule, not deletion of application history.
+- Source caveat: Adzuna's `created` timestamp may describe aggregator publication, not the employer's first posting. The agent cannot guarantee the original employer posting is under seven days unless the source supplies that original date.
+
+## 3.2 PostgreSQL / Supabase reliability update
+
+This release fixes the PostgreSQL `InFailedSqlTransaction` error during tracked-job schema migration, makes schema initialization idempotent, shares the database connector between job storage and profile storage, improves missing-profile and missing-Adzuna-credential diagnostics in the scheduled CLI, and configures Groq primary / Gemini backup in GitHub Actions. See `SUPABASE_SETUP.md` for setup steps. Your existing tables and application statuses are retained.
+
+Offline automated tests do not establish a live connection to your Supabase project or verify third-party APIs. A separate local SQLite store is still used for the optional browser application helper; it is not synchronized with Supabase.

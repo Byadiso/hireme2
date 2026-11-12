@@ -52,6 +52,7 @@ def load_preferences():
     conn, _ = _connect()
     try:
         conn.execute('CREATE TABLE IF NOT EXISTS search_preferences (id INTEGER PRIMARY KEY, settings_json TEXT NOT NULL)')
+        conn.commit()
         row = conn.execute('SELECT settings_json FROM search_preferences WHERE id=1').fetchone()
         if not row:
             return DEFAULT

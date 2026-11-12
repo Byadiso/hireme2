@@ -9,6 +9,7 @@ import streamlit as st
 from hiremed.core import cv_text,profile_from_cv
 from hiremed.storage import save_profile,load_profile,delete_profile
 from hiremed.discovery import discover
+from hiremed.freshness import freshness
 from hiremed.preferences import Preferences, load_preferences, save_preferences
 from hiremed.agent import run_agent, recent_actions, record_feedback, load_draft, load_run_report
 from hiremed.repository import list_jobs,get_job,set_status
@@ -126,6 +127,7 @@ else:
 
 st.divider()
 st.subheader('2. Find jobs')
+st.caption('Fresh jobs only: published in the past 7 days. Listings without verifiable posting dates are excluded.')
 left,right=st.columns([1,2])
 with left:
     limit=st.number_input('Results per suggested role',min_value=1,max_value=50,value=10)
@@ -209,7 +211,7 @@ with st.expander('Detailed agent activity (optional)',expanded=False):
 
 st.divider()
 st.subheader('4. Automatic resume tailoring')
-st.caption('For strong matches, compare the job description with your CV, identify supported ATS terms, and ask Groq (Gemini backup) for conservative rewrites. Review all changes before applying. No automatic submissions.')
+st.caption('Only jobs with verified posting dates in the past 7 days are eligible for new CV packages. For strong matches, compare the job description with your CV, identify supported ATS terms, and ask Groq (Gemini backup) for conservative rewrites. Review all changes before applying. No automatic submissions.')
 auto_tailor = st.checkbox('Automatically tailor strong matches after searching', value=True, key='auto_tailor')
 tailor_threshold = st.slider('Minimum score for tailoring', 0, 100, 80, 5, key='tailor_threshold')
 tailor_limit = st.number_input('Maximum CV packages per run (protects free AI quota)', 1, 10, 5, key='tailor_limit')
@@ -220,7 +222,7 @@ def generate_tailored_packages():
     original=st.session_state.get('original_cv_text')
     if not original:
         return 0
-    candidates=[j for j in list_jobs() if float(j.get('score') or 0)>=tailor_threshold]
+    candidates=[j for j in list_jobs() if freshness(j)['allowed'] and float(j.get('score') or 0)>=tailor_threshold]
     candidates.sort(key=lambda j: float(j.get('score') or 0), reverse=True)
     packages=st.session_state.setdefault('tailored_packages', {})
     created=0
@@ -252,6 +254,9 @@ packages=st.session_state.get('tailored_packages', {})
 if packages:
     st.write(f'**{len(packages)} tailored CV package(s) ready for review**')
     for jid, package in packages.items():
+        job_record=get_job(jid)
+        if not job_record or not freshness(job_record)['allowed']:
+            continue
         with st.expander(f"{package['job_title']} — {package['company']}"):
             st.caption(package['note'])
             st.write('**AI rewrite status:**', package.get('ai_rewrite_status', 'unknown'))
@@ -260,6 +265,8 @@ if packages:
                 st.warning('The saved job description is too short for reliable tailoring. Open the employer listing and verify its full requirements.')
             st.write('**ATS terms also found in your CV:**', ', '.join(report.get('matched_keywords', [])) or 'None identified')
             st.write('**Job terms not verified in your CV (do not add without evidence):**', ', '.join(report.get('unverified_job_terms', [])[:18]) or 'None identified')
+            st.write('**CV tailoring diagnostics:**', package.get('tailoring_diagnostics', {}))
+            st.write('**Preserved clickable CV links:**', package.get('links') or 'No profile URLs detected in extracted CV text')
             st.write('**Proposed changes — compare before approval:**')
             if not package.get('changes'):
                 st.info('No safe AI rewrites were accepted; the CV remains based on original wording.')
@@ -279,9 +286,9 @@ if packages:
 
 st.divider()
 st.subheader('5. Jobs and applications')
-jobs=list_jobs()
+jobs=[j for j in list_jobs() if freshness(j)['allowed']]
 if not jobs:
-    st.info('No jobs stored yet. Click Search jobs now to populate this table.')
+    st.info('No verified jobs posted in the last 7 days. Older and undated saved jobs are hidden; search again for fresh listings.')
 else:
     df=pd.DataFrame(jobs)
     a,b,c=st.columns(3)
@@ -293,7 +300,7 @@ else:
     if status_filter=='Verified matches':filtered=df[df['eligible']==1]
     elif status_filter=='Needs review':filtered=df[(df['eligible']==0)&(df['status']!='submitted')]
     elif status_filter=='Submitted':filtered=df[df['status']=='submitted']
-    st.dataframe(filtered[['title','company','score','eligible','status','source','url']],
+    st.dataframe(filtered[['title','company','posted_at','score','eligible','status','source','url']],
         column_config={'url':st.column_config.LinkColumn('Job link')},hide_index=True,use_container_width=True)
     if not filtered.empty:
         selected=st.selectbox('Inspect a vacancy',filtered['id'].tolist(),format_func=lambda jid:filtered.loc[filtered.id==jid,'title'].iloc[0])

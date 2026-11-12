@@ -2,6 +2,7 @@
 from .core import jobs_from_adzuna, jobs_from_csv, assess
 from .preferences import evaluate, load_preferences
 from .repository import save
+from .freshness import freshness
 
 
 def discover(profile, *, limit=10, csv_path=None, roles=None, preferences=None):
@@ -14,6 +15,10 @@ def discover(profile, *, limit=10, csv_path=None, roles=None, preferences=None):
     jobs=list(jobs_from_csv(csv_path)) if csv_path else jobs_from_adzuna(role_list,limit,country=p.country)
     results=[]
     for job in jobs:
+        check = freshness(job)
+        if not check['allowed']:
+            continue  # Never display or persist stale / undated jobs.
+        job['posted_at'] = check['posted_at']
         policy=evaluate(job,p)
         assessment=(assess(profile,job) if not policy['rejected'] else
                     {'score':0,'eligible':False,'method':'policy','rationale':'Rejected by preferences'})

@@ -6,14 +6,39 @@ LOG=logging.getLogger(__name__)
 DB=os.getenv('HIREMED_DB','data/hiremed.sqlite3')
 
 def cv_text(path):
+    """Extract CV text AND link targets (including links with labels such as GitHub)."""
     p=Path(path)
     if not p.exists(): raise FileNotFoundError(f'CV not found: {p}')
     if p.suffix.lower()=='.pdf':
         from pypdf import PdfReader
-        return '\n'.join(page.extract_text() or '' for page in PdfReader(str(p)).pages)
+        pages=PdfReader(str(p)).pages
+        lines=[page.extract_text() or '' for page in pages]
+        links=[]
+        for page in pages:
+            for annotation in page.get('/Annots', []):
+                try:
+                    obj=annotation.get_object()
+                    uri=obj.get('/A', {}).get('/URI')
+                    if uri and str(uri).startswith(('https://','http://','mailto:')): links.append(str(uri))
+                except (AttributeError, KeyError, TypeError): pass
+        return '\n'.join(lines + list(dict.fromkeys(links)))
     if p.suffix.lower()=='.docx':
         from docx import Document
-        return '\n'.join(p.text for p in Document(str(p)).paragraphs)
+        from docx.oxml.ns import qn
+        doc=Document(str(p))
+        paragraphs=list(doc.paragraphs)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells: paragraphs.extend(cell.paragraphs)
+        lines=[para.text for para in paragraphs]
+        links=[]
+        for para in paragraphs:
+            for node in para._p.iter(qn('w:hyperlink')):
+                rel_id=node.get(qn('r:id'))
+                if rel_id and rel_id in para.part.rels:
+                    target=str(para.part.rels[rel_id].target_ref)
+                    if target.startswith(('https://','http://','mailto:')): links.append(target)
+        return '\n'.join(lines + list(dict.fromkeys(links)))
     if p.suffix.lower()=='.txt': return p.read_text(encoding='utf-8')
     raise ValueError('CV must be PDF, DOCX or TXT')
 
@@ -61,10 +86,10 @@ def jobs_from_adzuna(roles,limit=10,country="PL"):
     results={}
     for role in roles[:8]:
         try:
-            r=requests.get(f'https://api.adzuna.com/v1/api/jobs/{country}/search/1',params={'app_id':aid,'app_key':key,'results_per_page':limit,'what':role},timeout=20);r.raise_for_status()
+            r=requests.get(f'https://api.adzuna.com/v1/api/jobs/{country}/search/1',params={'app_id':aid,'app_key':key,'results_per_page':limit,'what':role,'max_days_old':7},timeout=20);r.raise_for_status()
             for j in r.json().get('results',[]):
                 url=j.get('redirect_url','');jid='adzuna:'+str(j.get('id') or hashlib.sha256(url.encode()).hexdigest()[:16])
-                results[jid]={'id':jid,'title':j.get('title',''),'company':j.get('company',{}).get('display_name',''),'url':url,'description':j.get('description',''),'location':j.get('location',{}).get('display_name',''),'salary_monthly_gross_pln':None,'language':None,'arrangement':None,'source':'adzuna','country':country.upper()}
+                results[jid]={'id':jid,'title':j.get('title',''),'company':j.get('company',{}).get('display_name',''),'url':url,'description':j.get('description',''),'location':j.get('location',{}).get('display_name',''),'salary_monthly_gross_pln':None,'language':None,'arrangement':None,'source':'adzuna','country':country.upper(),'posted_at':j.get('created'),'original_posted_at':j.get('original_posted_at')}
         except (requests.RequestException,ValueError) as e: LOG.warning('Adzuna query failed for %s: %s',role,type(e).__name__)
     return list(results.values())
 
@@ -72,4 +97,4 @@ def jobs_from_csv(path):
     import csv
     with open(path,encoding='utf-8-sig',newline='') as f:
         for row in csv.DictReader(f):
-            url=row.get('url') or row.get('Link') or '';yield {'id':row.get('id') or 'csv:'+hashlib.sha256(url.encode()).hexdigest()[:16], 'title':row.get('title') or row.get('Title') or '', 'company':row.get('company') or row.get('Company') or '', 'url':url, 'description':row.get('description') or row.get('Description') or '', 'location':row.get('location') or '', 'salary_monthly_gross_pln':row.get('salary_monthly_gross_pln') or None,'language':row.get('language') or None,'arrangement':row.get('arrangement') or None, 'source':'csv'}
+            url=row.get('url') or row.get('Link') or '';yield {'id':row.get('id') or 'csv:'+hashlib.sha256(url.encode()).hexdigest()[:16], 'title':row.get('title') or row.get('Title') or '', 'company':row.get('company') or row.get('Company') or '', 'url':url, 'description':row.get('description') or row.get('Description') or '', 'location':row.get('location') or '', 'salary_monthly_gross_pln':row.get('salary_monthly_gross_pln') or None,'language':row.get('language') or None,'arrangement':row.get('arrangement') or None, 'source':'csv','posted_at':row.get('posted_at') or row.get('date_posted') or row.get('created') or row.get('published_at'),'original_posted_at':row.get('original_posted_at')}

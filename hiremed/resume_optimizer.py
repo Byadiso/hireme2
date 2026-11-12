@@ -6,6 +6,9 @@ requirements only affect ordering and emphasis of source-supported material.
 import re
 from io import BytesIO
 from xml.sax.saxutils import escape
+from urllib.parse import urlparse
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from pathlib import Path
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
@@ -30,6 +33,27 @@ HEADINGS = {
 BULLET = re.compile(r'^\s*[•●▪*-]\s*')
 STOP = {'the','and','for','with','from','that','this','are','job','role','you','your','our','has','have','will','their','using','years','experience','work','team','skills'}
 
+
+LINK_RE = re.compile(r'(?i)(?<![\w@])(?:https?://)?(?:www\.)?(?:github\.com|linkedin\.com/in|gitlab\.com|bitbucket\.org|[\w.-]+\.[a-z]{2,}/[\w./?=#%-]+)[^\s<>]*')
+
+def cv_links(original):
+    """Preserve explicit URLs; never guess a profile from the candidate's name."""
+    links=[]
+    for match in LINK_RE.finditer(original):
+        url=match.group(0).rstrip('.,;:)]}')
+        if not url.startswith(('https://','http://')): url='https://'+url
+        parsed=urlparse(url)
+        if parsed.hostname and url not in links: links.append(url)
+    return links[:24]
+
+def _docx_link(paragraph, url):
+    rel=paragraph.part.relate_to(url, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink', is_external=True)
+    hyperlink=OxmlElement('w:hyperlink');hyperlink.set(qn('r:id'),rel)
+    run=OxmlElement('w:r');properties=OxmlElement('w:rPr')
+    color=OxmlElement('w:color');color.set(qn('w:val'),'0563C1');properties.append(color)
+    underline=OxmlElement('w:u');underline.set(qn('w:val'),'single');properties.append(underline)
+    run.append(properties);node=OxmlElement('w:t');node.text=url;run.append(node)
+    hyperlink.append(run);paragraph._p.append(hyperlink)
 
 def resume_lines(original):
     if not isinstance(original, str) or not original.strip():
@@ -86,7 +110,7 @@ def _group_records(lines):
     records = []
     for line in lines:
         if _is_record_header(line) or not records:
-            records.append({'heading': line, 'bullets': []})
+            records.append({'heading': BULLET.sub('', line).strip(), 'bullets': []})
         else:
             records[-1]['bullets'].append(BULLET.sub('', line).strip())
     return records
@@ -138,7 +162,7 @@ def make_package(original, job, use_ai=True):
             'company': str(job.get('company') or '')[:120], 'header': parts['header'],
             'summary': summary, 'skills': skills, 'experience': experience,
             'projects': projects, 'education': parts['education'],
-            'evidence': evidence, 'original': original,
+            'evidence': evidence, 'original': original, 'links': cv_links(original),
             'note': 'AI-assisted CV draft. Review every factual claim before applying.'}
     if use_ai:
         from .ats_tailoring import rewrite_package
@@ -185,6 +209,11 @@ def to_docx(package):
         for r in p.runs: r.font.size = Pt(10)
     for item in header[2:]:
         doc.add_paragraph(item)
+    if package.get('links'):
+        p=doc.add_paragraph('PORTFOLIO & PROFILES  ')
+        for index, url in enumerate(package['links']):
+            if index: p.add_run('  |  ')
+            _docx_link(p, url)
     if package['summary']:
         doc.add_heading('PROFESSIONAL SUMMARY', 1)
         doc.add_paragraph(package['summary'])
@@ -226,6 +255,10 @@ def to_pdf(package):
     header = package['header']
     para(header[0], title)
     for line in header[1:]: para(line)
+    if package.get('links'):
+        para('PORTFOLIO & PROFILES', section)
+        for url in package['links']:
+            story.append(Paragraph('<link href="' + escape(url, {'"': '&quot;'}) + '" color="#0057b8">' + escape(url) + '</link>', base))
     def heading(label): para(label, section)
     if package['summary']:
         heading('PROFESSIONAL SUMMARY'); para(package['summary'])

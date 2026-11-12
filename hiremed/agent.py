@@ -12,6 +12,7 @@ from collections import Counter
 from .core import assess, jobs_from_adzuna, jobs_from_csv, llm_json
 from .preferences import evaluate, load_preferences
 from .repository import save, connection
+from .freshness import freshness
 
 LOG = logging.getLogger(__name__)
 
@@ -141,7 +142,11 @@ def run_agent(profile, *, limit=8, csv_path=None, max_jobs=20, prepare_drafts=Fa
         jobs = list(jobs_from_csv(csv_path))[:max_jobs]
     else:
         jobs = jobs_from_adzuna(plan['queries'], limit=limit, country=p.country)[:max_jobs]
-    log_action('discover', f'{len(jobs)} unique vacancies retrieved from configured source')
+    retrieved_count = len(jobs)
+    jobs = [job for job in jobs if freshness(job)['allowed']]
+    for job in jobs:
+        job['posted_at'] = freshness(job)['posted_at']
+    log_action('discover', f'{len(jobs)} fresh vacancies; {retrieved_count-len(jobs)} stale/undated excluded')
     results = []
     drafts_created = 0
     progress("evaluation", f"Evaluating {len(jobs)} vacancies", 0, len(jobs))
@@ -255,6 +260,7 @@ def load_run_report():
     conn, pg = connection()
     try:
         conn.execute('CREATE TABLE IF NOT EXISTS agent_last_run (id INTEGER PRIMARY KEY, report_json TEXT NOT NULL)')
+        conn.commit()
         row = conn.execute('SELECT report_json FROM agent_last_run WHERE id=1').fetchone()
         return json.loads(row[0]) if row else None
     finally:

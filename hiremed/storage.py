@@ -32,6 +32,7 @@ def load_profile():
     try:
         cur=conn.cursor()
         cur.execute('CREATE TABLE IF NOT EXISTS candidate_profile (id INTEGER PRIMARY KEY, profile_json TEXT NOT NULL, updated_at TEXT NOT NULL)')
+        conn.commit()
         cur.execute('SELECT profile_json FROM candidate_profile WHERE id=1')
         row=cur.fetchone()
         return json.loads(row[0]) if row else None

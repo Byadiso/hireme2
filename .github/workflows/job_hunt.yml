@@ -1,4 +1,4 @@
-name: HireMeD 2.2 Discovery
+name: HireMeD Scheduled Discovery
 on:
   workflow_dispatch:
   schedule:
@@ -18,6 +18,9 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Discover and evaluate (NO SUBMISSION)
         env:
+          AI_PROVIDER: groq
+          AI_FALLBACK_PROVIDER: gemini
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
