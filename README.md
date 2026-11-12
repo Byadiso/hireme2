@@ -1,187 +1,259 @@
-## Version 2.8: Professional resume layout
+<div align="center">
 
-Replaces excerpt-and-appendix output with structured, ATS-friendly CVs. Preserves original source facts, reflows wrapped PDF text, ranks existing skills and achievement bullets by job relevance, and exports Word/PDF. No automatic application submission. Original CV remains unchanged.
+# HireMeD
 
-**Limitations:** Tailoring is conservative: it reorganizes and cleans source material, but does not generate unverified new claims or guarantee full semantic rewriting. Review every draft before applying.
+### AI-assisted job discovery, matching & application-ready resume preparation
 
-# HireMeD 2.5 — Groq-first AI with Gemini backup
+**Discover relevant vacancies. Understand the match. Tailor your CV. Stay in control.**
 
-Set `AI_PROVIDER=groq`, `GROQ_API_KEY=...`, `AI_FALLBACK_PROVIDER=gemini`, and optionally `GEMINI_API_KEY=...` in `.env` (see `.env.example`). Groq is attempted first. On errors (including quota/rate limits), Gemini is tried if configured. If both fail, job search still uses keyword fallback; CV upload preserves the previously saved profile instead of overwriting it.
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Groq](https://img.shields.io/badge/AI-Groq%20(primary)-F55036)](https://groq.com/)
+[![Gemini](https://img.shields.io/badge/AI-Gemini%20(fallback)-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
+[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL%20%2F%20SQLite-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![GitHub Actions](https://img.shields.io/badge/Automation-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](https://github.com/features/actions)
+[![Adzuna](https://img.shields.io/badge/Job%20source-Adzuna-6554C0)](https://developer.adzuna.com/)
+[![License](https://img.shields.io/badge/License-See%20repository-lightgrey)](#license)
 
-**Note:** The free plans have rate limits and may change. This upgrade does not guarantee unlimited free inference. The current code makes up to two AI calls per job; keep the run size small to conserve quota. Gemini fallback may also be exhausted.
+**[Quick start](#quick-start)** · **[Jobs & matching](#jobs--matching)** · **[Resume tailoring](#ai-assisted-resume-tailoring)** · **[GitHub Actions](#scheduled-discovery-with-github-actions)** · **[Privacy & limitations](#privacy-security--limitations)**
 
-**Privacy:** CV text is transmitted to the selected cloud provider. Use only providers you trust. Never commit `.env` or keys.
+</div>
 
-**Migration:** Copy your `.env` and (for local SQLite) `data/hiremed.sqlite3` from the old version. Start with `python -m streamlit run dashboard.py --server.address 127.0.0.1`. If no profile is saved, upload and analyze the CV before starting the agent.
+---
 
-# HireMeD 2.0 — Gemini & Upload Upgrade
+## Overview
 
-This is an **incremental implementation**, not a fully deployed universal auto-apply service.
+**HireMeD** is a Python-based career-assistance project that brings job discovery, CV analysis, vacancy matching, and resume preparation into one Streamlit dashboard. It is designed to reduce repetitive job-search work while keeping application decisions with the candidate.
 
-## Included and locally tested
+The project combines the **Adzuna job API** with a **Groq-first AI workflow** (Gemini as an optional fallback). It supports configurable job-search preferences, saved job records, activity reports, and ATS-oriented CV drafts in **DOCX and PDF**.
 
-- Authenticated Streamlit dashboard for on-demand PDF, DOCX, TXT CV uploads.
-- Temporary CV processing (deleted after analysis); Gemini extracts a structured candidate profile.
-- Replace or delete stored structured profile. The profile is **persisted** for scheduled searches, and contains personal information.
-- Google Gemini via `google-genai` and `GEMINI_API_KEY` (Gemini requests transmit CV/job content to Google).
-- Adzuna discovery, CSV demo feed, matching, preference gate, and persistent jobs.
-- Poland, English, remote/hybrid, minimum **8,000 PLN gross/month**.
-- Unknown salary, language, or work arrangement is **review required**, not assumed eligible.
-- AI-generated cover letter and professional-summary DOCX drafts for verified matches.
-- GitHub Actions scheduled discovery, reading a shared PostgreSQL database; no CV file in CI.
-- Restricted local Playwright form adapter from the previous version, requiring consent, explicit allowlist, applicant details, and a CV at submission time.
+> **Project status:** Active development. HireMeD is an AI-assisted workflow, **not** a universal autonomous job applicant. Scheduled discovery does **not** submit applications.
 
-## Not yet delivered
+## Key features
 
-- LinkedIn, Indeed, and Pracuj.pl direct integrations; access depends on permitted APIs / terms.
-- General company ATS discovery integrations, universal form support, CAPTCHA or login bypass.
-- Unattended auto-apply from GitHub Actions. The form adapter is **local only**, and the dashboard does not call it.
-- A full tailored CV; the generated professional-summary DOCX is not a complete CV.
-- Live end-to-end validation with Gemini, Adzuna, PostgreSQL, or a real employer submission.
+| Feature | What it does |
+| --- | --- |
+| **CV analysis** | Extracts a structured candidate profile from an uploaded PDF, DOCX, or TXT resume. |
+| **Job discovery** | Finds vacancies through Adzuna and supports CSV-based offline testing. |
+| **Configurable preferences** | Filters by country, language, work arrangement, minimum gross monthly salary, and work authorization. |
+| **Match scoring** | Ranks vacancies against the candidate profile; a high score is a recommendation to investigate, not proof of eligibility. |
+| **Evidence-aware eligibility** | Distinguishes verified matches from listings with missing or conflicting requirements. |
+| **Agent feedback** | Summarizes discovered jobs, strong matches, review items, rejections, and suggested next steps. |
+| **AI-assisted CV tailoring** | Uses the available job description and original CV to propose relevant ATS-oriented wording. |
+| **Resume exports** | Produces Word and PDF drafts with a review step before use. |
+| **Scheduled discovery** | Runs headlessly through GitHub Actions against a shared PostgreSQL database. |
+| **Provider fallback** | Attempts Groq first, then Gemini if configured; reduced functionality remains available without AI. |
 
-## Setup
+## Jobs & matching
 
-1. `python -m venv .venv` and activate it.
-2. `pip install -r requirements.txt`.
-3. Copy `.env.example` to `.env`; configure `GEMINI_API_KEY`, `HIREMED_DASHBOARD_PASSWORD`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`.
-4. Configure a **private PostgreSQL database** using `DATABASE_URL` for sharing state across your Streamlit host and GitHub Actions. Use a restricted DB user and TLS. Without `DATABASE_URL`, local SQLite works but **GitHub Actions state will not persist between runs**.
-5. Start dashboard: `python -m dotenv run -- streamlit run dashboard.py`.
-6. Upload a CV in the dashboard, review the extracted profile, then run `python -m dotenv run -- python job_bot.py` or test offline with `python -m dotenv run -- python job_bot.py --jobs-csv examples/jobs.csv`.
-7. Run tests: `python -m pytest -q`.
-8. Deploy the dashboard on an authenticated private host separately; GitHub Actions is a scheduler, **not** a Streamlit host. Configure GitHub Actions secrets `GEMINI_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `DATABASE_URL`.
+**Job discovery:** `Adzuna` · **Match scoring:** `0–100` · **Strong-match default:** `80+` · **Freshness:** `Last 7 days` · **Status:** `Discovered / Review / Verified / Rejected`
 
-**Do not commit your CV, API keys, `.env`, database files, or browser cookies.** Original uploaded CVs are deleted after analysis; they are not available later for unattended form uploads. Upload again when you intend to apply, or build a separate consent-based encrypted temporary document store with expiry.
+HireMeD separates **finding a vacancy** from **verifying whether it meets your requirements**:
 
-## Safety and review
+1. **Discover** jobs using your saved search preferences and candidate profile.
+2. **Check freshness:** the active discovery view requires a timezone-aware publication date within the last seven days. If an original publication date is available, it takes precedence over a repost date.
+3. **Score** job relevance against your CV and identify promising roles.
+4. **Investigate** the job description for salary, language, location/work arrangement, and required skills.
+5. **Report** strong matches even when some eligibility details are still unverified.
+6. **Review** promising vacancies and open the original job listing before applying.
 
-Missing job data blocks auto-eligibility. Gemini outputs may be wrong; review generated text. No automatic applications are made by the scheduled workflow. Local form automation (`apply_job.py`) requires `HIREMED_AUTO_APPLY=I_CONSENT_TO_AUTOMATED_SUBMISSIONS`, a configured `application_sites.json`, a verified job assessment in the legacy local DB, and an accessible CV file. This legacy adapter is not yet wired to the new PostgreSQL tracking flow.
+**Important:** A score of **90/100** indicates a strong CV match, **not** that salary, language, or remote/hybrid requirements have been confirmed. Missing information is marked for review rather than assumed to qualify.
 
-## Privacy
+### Where to see found jobs
 
-Uploaded CVs are briefly written to a temporary directory for PDF/DOCX parsing and deleted automatically. Streamlit's upload session may retain the upload in memory until the session ends. Structured profile and job assessments are saved in the database and may contain sensitive personal information. Delete the stored profile through the dashboard when no longer needed.
+Start the Streamlit dashboard and open **Jobs and applications** to view the saved vacancy table, scores, status, and source links. The **Career agent report** summarizes what the latest run actually discovered.
 
-## HireMeD 2.1: One-dashboard workflow (updated)
+> **Live job counts are intentionally not embedded in this README.** They depend on your saved profile, configured preferences, database, and the most recent search. The dashboard is the source of truth for current results.
 
-This version simplifies the user interface. **Only one command is needed for interactive use**:
+## AI-assisted resume tailoring
+
+For promising jobs (default **80+ match score**), HireMeD can use the available job description to identify ATS keywords and propose improvements to the resume's summary and experience bullets.
+
+- **Groq** is the primary AI provider; **Gemini** is the optional fallback.
+- Suggested changes are compared with the original CV, and conservative checks reject some unsupported edits.
+- A before-and-after preview helps the candidate review changes.
+- **DOCX and PDF** are available after review confirmation.
+- The original CV remains unchanged; **no application is submitted by this workflow**.
+
+AI-generated text can still contain errors. Always check job-specific wording, employment dates, qualifications, achievements, and links before using a tailored CV.
+
+## Architecture
+
+```text
+                       ┌─────────────────────┐
+                       │ Streamlit dashboard │
+                       │ CV · jobs · reports │
+                       └──────────┬──────────┘
+                                  │
+                        ┌─────────▼──────────┐
+                        │ Candidate profile  │
+                        │ & saved preferences│
+                        └─────────┬──────────┘
+                                  │
+            ┌─────────────────────▼─────────────────────┐
+            │ Shared discovery and evaluation pipeline  │
+            │ Adzuna → freshness → scoring → AI review  │
+            └──────────────┬─────────────────┬──────────┘
+                           │                 │
+                    ┌──────▼──────┐   ┌──────▼─────────┐
+                    │ Job reports │   │ CV tailoring   │
+                    │ & tracking  │   │ DOCX / PDF     │
+                    └─────────────┘   └────────────────┘
+
+GitHub Actions → job_bot.py → shared discovery pipeline
+Local SQLite OR shared PostgreSQL (e.g., Supabase)
+```
+
+## Tech stack
+
+| Area | Technology |
+| --- | --- |
+| Language | Python |
+| User interface | Streamlit |
+| Primary AI | Groq API |
+| Optional fallback AI | Google Gemini API |
+| Vacancy source | Adzuna API |
+| Data persistence | SQLite (local), PostgreSQL / Supabase (shared) |
+| Scheduling | GitHub Actions |
+| CV processing and exports | PDF/DOCX parsing and Word/PDF generation |
+| Browser application helper | Optional, separate local Playwright adapter with explicit consent and site allowlisting |
+| Testing | pytest |
+
+## Quick start
+
+### Prerequisites
+
+- Python **3.11+** and Git
+- Adzuna application credentials for live discovery
+- A Groq API key for AI features (Gemini optional)
+- A PostgreSQL connection string **only if** you want the dashboard and GitHub Actions to share state
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/Byadiso/HireMeD.git
+cd HireMeD
+python -m venv .venv
+```
+
+Activate the virtual environment:
+
+```bash
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+
+# macOS / Linux / Git Bash
+source .venv/bin/activate
+```
+
+Then install dependencies:
 
 ```bash
 python -m pip install -r requirements.txt
-python -m streamlit run dashboard.py --server.address 127.0.0.1
 ```
 
-`dashboard.py` loads `.env` automatically. Open the local Streamlit URL, upload your CV, click **Analyze CV and update profile**, then click **Search jobs now**. Matching jobs appear in a table **on the same page**. No separate `job_bot.py` command is required for manual searching. `job_bot.py` remains available for scheduled GitHub Actions runs and uses the exact same `hiremed.discovery.discover` pipeline.
+### 2. Configure environment variables
 
-### Authentication
+Copy `.env.example` to `.env` and fill in the values you use:
 
-For local-only use, `HIREMED_REQUIRE_AUTH=false` disables the password prompt. **Always bind the server to `127.0.0.1` in local mode**; this is not safe on an exposed/public server. When deploying to a public or shared host, set `HIREMED_REQUIRE_AUTH=true`, set a strong `HIREMED_DASHBOARD_PASSWORD` in protected environment secrets, and deploy behind HTTPS. The password is remembered for the current Streamlit session.
+```dotenv
+AI_PROVIDER=groq
+AI_FALLBACK_PROVIDER=gemini
+GROQ_API_KEY=your_groq_key
+GEMINI_API_KEY=your_optional_gemini_key
+ADZUNA_APP_ID=your_adzuna_app_id
+ADZUNA_APP_KEY=your_adzuna_app_key
 
-### Gemini troubleshooting
+# Optional: required for shared state with GitHub Actions
+# DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/postgres
 
-Set `GEMINI_MODEL=gemini-3.5-flash` in `.env` (or choose another model verified to work with your API key). Failures are logged with a short error description in the terminal. Your existing saved profile is **not replaced** when a new CV analysis fails. The original uploaded CV is deleted after parsing; the structured profile is retained until you delete it.
-
-### Live search limitations
-
-Live discovery requires `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`. Without them, the dashboard explains what is missing. Adzuna snippets often omit salary, job language, and remote/hybrid arrangement; such jobs are shown for review rather than incorrectly labeled eligible. The dashboard does **not** automatically submit applications. LinkedIn, Indeed, Pracuj.pl, and universal employer-form automation are **not** included. GitHub Actions and a locally running dashboard require a shared `DATABASE_URL` to see the same saved profile and jobs; a local SQLite file is not shared with GitHub-hosted runners.
-
-### Tests
-
-```bash
-python -m pytest -q
+# Local-only dashboard; never expose password-free mode publicly
+HIREMED_REQUIRE_AUTH=false
 ```
 
-## Career Agent (new in 2.2)
+**Never commit `.env`, API keys, database credentials, or personal CV files.** If the database password contains URL-reserved characters, encode them in the connection string.
 
-Run **one** local command (after installing requirements and configuring `.env`):
+### 3. Launch the dashboard
 
 ```bash
 python -m streamlit run dashboard.py --server.address 127.0.0.1
 ```
 
-The same page now offers **Run career agent** and an **Agent activity and decisions** history. The agent:
+In the dashboard:
 
-1. Uses Gemini to propose up to five CV-grounded search queries, falling back to the CV's roles if Gemini is unavailable.
-2. Searches Adzuna (or a local CSV in programmatic tests), with a hard cap of 30 evaluated jobs per run.
-3. Investigates each listing using Gemini and verifies any quoted evidence against the original listing text.
-4. Checks your preferences and assesses qualifications; unknown salary, language, arrangement, and requirements remain review items, **never verified**.
-5. Saves results, reasons, and an activity log to SQLite locally or PostgreSQL when configured.
-6. Optionally creates **cover-letter and CV-summary drafts** for fully verified matches. These are stored in the private database and downloadable on the same dashboard. They are **not** complete tailored CVs or automatic applications.
-7. Accepts relevant/irrelevant feedback on jobs and uses that feedback to prioritize similar searches in later runs.
+1. Upload and analyze your CV.
+2. Review and save the extracted profile.
+3. Configure your **job search preferences** (country, language, salary, work arrangement, and authorization).
+4. Select **Search jobs now** or **Run career agent**.
+5. Review the **agent report** and **Jobs and applications** table.
+6. Review tailored CV changes and download DOCX/PDF drafts when appropriate.
 
-### Scope and safety
+The historical default search preference is **Poland / English / remote or hybrid / 8,000 PLN gross per month**, but these values are editable, not fixed in the search logic. Salary handling currently assumes PLN; changing country does not automatically convert currencies.
 
-This is a bounded, tool-using AI workflow, not a universal autonomous applicant. **No applications are submitted by the agent.** The existing separate employer-form adapter remains opt-in. Adzuna is the only implemented live source; LinkedIn, Indeed, Pracuj.pl and broad company-career crawling are not implemented. Missing information is not guessed. CV text is sent to Google Gemini when you upload and analyze it, and the original uploaded file is discarded; structured profiles and generated drafts remain in the database until deleted. Keep database credentials and dashboard access private. A GitHub Actions runner requires `DATABASE_URL` for shared persistent state.
-
-To run the offline tests:
+### 4. Run tests
 
 ```bash
 python -m pytest -q
 ```
 
-## Editable job preferences (2.3)
+For an offline discovery test, where supported by the installed version:
 
-Open the dashboard and edit **Job search preferences** at the top. Country code, job language,
-minimum monthly gross salary in PLN, accepted work arrangements, and work authorization are
-saved in the configured SQLite/PostgreSQL database. Both **Search jobs now** and **Run the
-career agent** read the saved values. The scheduled `job_bot.py` entry point reads the same
-values when it connects to the same database. Defaults remain Poland / English / remote or
-hybrid / 8,000 PLN gross per month until you save your own preferences.
+```bash
+python job_bot.py --jobs-csv examples/jobs.csv
+```
 
-**Country coverage:** Adzuna searches now use the selected country code, but not every country is supported by
-Adzuna. Unsupported countries may produce API errors or zero results. The salary
-field currently uses PLN for all countries and is not a currency conversion feature.
+## Scheduled discovery with GitHub Actions
 
-**Scheduled runs:** If Streamlit and GitHub Actions do not share `DATABASE_URL`, they will
-have separate settings and profile databases. Configure a shared private PostgreSQL instance
-for cross-device/scheduled persistence.
+The `.github/workflows/` workflow can run `python job_bot.py` on a schedule or via **Actions → Run workflow**. The dashboard and runner must use the **same PostgreSQL `DATABASE_URL`** to access the same saved CV profile, preferences, and job records.
 
-## 2.4 — Agent feedback and progress
+Configure these **GitHub Actions secrets**:
 
-The **Career agent — what did it find?** section now displays a persisted report for the most recent completed run: total checked, verified matches, jobs needing review, rejections, frequent blockers, top verified matches, and a suggested next step. A progress indicator reports planning, discovery, and per-job evaluation while the agent runs. The detailed event log remains available in an optional expander. The report is stored in the configured database; it reflects **only the most recent completed agent run**, not the full historical jobs table. No applications are submitted automatically.
+| Secret | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Shared PostgreSQL / Supabase connection |
+| `GROQ_API_KEY` | Primary AI provider |
+| `GEMINI_API_KEY` | Optional backup provider |
+| `ADZUNA_APP_ID` | Adzuna application ID |
+| `ADZUNA_APP_KEY` | Adzuna application key |
 
-## 2.7: Automatic job-specific resume packages
+If you use **environment secrets** instead of repository secrets, the workflow job must declare the matching `environment:` name. A workflow re-run uses its original commit; use **Run workflow** for the current version.
 
-Upload your original CV again **in the same dashboard session**, then run Search Jobs or Career Agent. With **Automatically tailor strong matches** enabled (default), HireMeD prepares up to five resume packages for saved jobs scoring **80+**. Each package offers **DOCX and PDF** downloads and requires your review before use. No applications are submitted automatically.
+**First-time setup:** Configure the same `DATABASE_URL` in your local `.env`, launch the dashboard, and upload/analyze your CV. A fresh shared database has no profile until you save one. A GitHub-hosted runner cannot read the SQLite database on your laptop.
 
-The generated files place **verbatim job-relevant lines from the uploaded CV** first, followed by the **complete extracted original CV text**. The AI may select existing CV line indices, but cannot write new claims. This is a conservative, truthful tailoring workflow, **not** a polished rewrite of each experience bullet or a preservation of the original document's formatting. Inspect the downloads before sending. Original CV text and generated packages are kept only in Streamlit session memory; the existing saved structured profile remains in the database. Reupload after restarting Streamlit. A fresh upload is also needed for scheduled discovery if you later want background tailoring.
+Scheduled discovery is **read/evaluate/store only**. It does not submit applications or have access to the original uploaded CV file.
 
-The free-tier AI provider is called only for candidate line selection; keyword-based selection works if both Groq and Gemini are unavailable. Adjust the threshold and maximum packages in the dashboard to control usage.
+For database setup details, see [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md) if present in your checkout.
 
-## 2.9 — AI-assisted ATS resume tailoring
+## Privacy, security & limitations
 
-After discovery, jobs scoring at least 80 (configurable) are selected for CV preparation.
-The dashboard loads the **stored full job description**, identifies matching and unverified
-keywords, then makes one Groq-first/Gemini-backup JSON rewrite request per job. AI may
-propose concise summary and bullet rewrites; a conservative lexical and numeric gate
-rejects unsupported changes. This gate **does not guarantee factual correctness**:
-review the original/revised comparison before unlocking DOCX and PDF downloads.
-If a listing description is short or both providers are unavailable, the existing
-resume wording is preserved and the dashboard explains why. No applications are
-submitted automatically. Original CV stays in Streamlit session state, not the ZIP.
+- **Personal data:** Uploaded CV text may be sent to Groq or Gemini for analysis. Structured candidate profiles, job records, and generated drafts may be stored in the configured database.
+- **Original documents:** Uploaded CV files are not stored in the profile database; the dashboard may retain temporary/session copies while preparing tailored documents.
+- **Access control:** Use `127.0.0.1` for password-free local use. A public deployment needs authentication, HTTPS, and appropriate database access controls.
+- **Job data:** Adzuna may not supply salary, language, work arrangement, or the employer's original posting date. Missing evidence is not proof of eligibility.
+- **Freshness:** The seven-day filter checks available source timestamps; it cannot independently guarantee the employer first posted the role within seven days.
+- **AI accuracy:** Keyword matching and AI rewriting cannot guarantee ATS performance or factual correctness. Review every document.
+- **Application submission:** There is **no universal or unattended auto-apply** in the scheduled agent. A separate, restricted local Playwright helper may exist, but it is not integrated with the shared PostgreSQL tracking workflow.
+- **Sources:** Direct LinkedIn, Indeed, and Pracuj.pl integrations are not included in the documented implementation.
+- **Free API usage:** Groq and Gemini free tiers have changing request and rate limits.
 
-**Application workflow:** review changes, check the original employer job listing,
-confirm the CV's factual accuracy, download DOCX/PDF, then apply manually through
-its official application page. Automated submission is not included: it would require
-separate employer-specific integration and explicit opt-in/approval.
+## For recruiters
 
+HireMeD demonstrates practical engineering across **Python automation, API integration, AI-assisted document processing, SQL persistence, workflow orchestration, and responsible human-in-the-loop design**.
 
-## Version 3.0 improvements: job freshness and CV tailoring
+The project prioritizes **transparent recommendations**: it distinguishes high CV relevance from verified job eligibility, preserves original candidate information, and requires review before using generated application materials.
 
-- Both dashboard discovery and scheduled agent runs **exclude jobs without a verified timezone-aware publication date**, and jobs older than 7 x 24 hours. Adzuna queries include `max_days_old=7`, with a second local verification gate. CSV imports must include `posted_at` (ISO 8601 with timezone, e.g. `2026-11-08T12:00:00Z`); undated rows are excluded. `original_posted_at`, when supplied, takes precedence over repost dates.
-- Existing database rows are migrated to retain `posted_at`. Old, undated jobs are hidden from active discovery and CV tailoring; previously submitted or prepared applications remain visible for tracking.
-- AI tailoring now receives the original CV context so it can use skills supported elsewhere in the CV. Proposed rewrites still undergo a deterministic safety check, with accepted/rejected counts shown in the dashboard. No invented skills, metrics or credentials are permitted.
-- AI rewrites require a configured LLM provider. Without one, the agent still produces a source-preserving, reordered CV; it cannot guarantee substantive rewriting. The generated documents must be reviewed before use.
-- Date filtering verifies feed-provided timestamps; it does not independently verify employer websites or detect every disguised repost.
+## Contributing
 
+Issues and pull requests are welcome. Please include reproducible steps for bugs, tests for behavior changes, and **redacted** logs. Never include real CVs, access tokens, or database connection strings in public issues.
 
-## Version 3.1: CV links and strict seven-day visibility
+## License
 
-- DOCX hyperlink relationship targets and PDF URI annotations are extracted into the CV text, even when the displayed text is only “GitHub” or “LinkedIn”. URLs found in the CV are preserved as **clickable hyperlinks** in both exported DOCX and PDF. The application does not guess or invent missing profile URLs.
-- AI is instructed to make only meaningful, evidence-backed edits and cannot rewrite lines containing portfolio links. The change preview and explicit candidate approval remain mandatory.
-- Freshness uses the oldest verified date among `original_posted_at` and `posted_at`. Both are persisted in the database; older saved jobs are hidden from the active dashboard even if they were previously submitted. This is a strict visibility rule, not deletion of application history.
-- Source caveat: Adzuna's `created` timestamp may describe aggregator publication, not the employer's first posting. The agent cannot guarantee the original employer posting is under seven days unless the source supplies that original date.
+See the repository's `LICENSE` file, if provided. If none is present, do not assume the source is licensed for reuse.
 
-## 3.2 PostgreSQL / Supabase reliability update
+---
 
-This release fixes the PostgreSQL `InFailedSqlTransaction` error during tracked-job schema migration, makes schema initialization idempotent, shares the database connector between job storage and profile storage, improves missing-profile and missing-Adzuna-credential diagnostics in the scheduled CLI, and configures Groq primary / Gemini backup in GitHub Actions. See `SUPABASE_SETUP.md` for setup steps. Your existing tables and application statuses are retained.
+<div align="center">
 
-Offline automated tests do not establish a live connection to your Supabase project or verify third-party APIs. A separate local SQLite store is still used for the optional browser application helper; it is not synchronized with Supabase.
+**HireMeD — Smarter job discovery, clearer decisions, better-prepared applications.**
+
+</div>
