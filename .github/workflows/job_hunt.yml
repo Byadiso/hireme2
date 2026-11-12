@@ -12,6 +12,7 @@ permissions:
 jobs:
   discover:
     runs-on: ubuntu-latest
+    environment: GEMINI_API_KEY
     timeout-minutes: 20
 
     steps:
