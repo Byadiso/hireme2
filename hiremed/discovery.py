@@ -1,5 +1,5 @@
 """Single discovery pipeline shared by Streamlit and GitHub Actions."""
-from .core import jobs_from_adzuna, jobs_from_csv, assess
+from .core import jobs_from_adzuna, jobs_from_sources, jobs_from_csv, assess
 from .preferences import evaluate, load_preferences
 from .repository import save
 from .freshness import freshness
@@ -12,7 +12,10 @@ def discover(profile, *, limit=10, csv_path=None, roles=None, preferences=None):
     if not role_list:
         raise ValueError('No suitable job titles found in your profile. Update your CV first.')
     p = preferences if preferences is not None else load_preferences()
-    jobs=list(jobs_from_csv(csv_path)) if csv_path else jobs_from_adzuna(role_list,limit,country=p.country)
+    import os
+    jobs=(list(jobs_from_csv(csv_path)) if csv_path else
+          jobs_from_adzuna(role_list,limit,country=p.country) if os.getenv('JOB_SOURCES', 'adzuna').strip().lower() == 'adzuna' else
+          jobs_from_sources(role_list,limit,country=p.country))
     results=[]
     for job in jobs:
         check = freshness(job)

@@ -107,6 +107,20 @@ def evaluate(job, preferences=None):
         except (TypeError, ValueError):
             unknown.append('Salary format unverified')
 
+    # Explicit mandatory Polish-language requirements are disqualifying for an
+    # English-only search even when the aggregator omits its language field.
+    polish_required = bool(re.search(
+        r'(?i)\b(?:fluent|proficient|advanced|native|excellent|good|communicative|'
+        r'required|mandatory|must speak|must know|knowledge of|fluency in)\s+'
+        r'(?:in\s+)?(?:the\s+)?polish\b|'
+        r'\bpolish\s+(?:language\s+)?(?:is\s+)?(?:required|mandatory|fluency|'
+        r'proficiency|skills|at\s+least\s+[bc][12]|[bc][12]\s+level)\b|'
+        r'\b(?:język\s+polski|języka\s+polskiego|polski\s+(?:min\.?\s*)?[bc][12])\b',
+        content))
+    # Exclude explicit Polish language requirements even if a feed labels the
+    # listing as English. Mentioning Poland/Polish clients alone is not enough.
+    if p.language == 'en' and polish_required:
+        reasons.append('Polish language required')
     language = (job.get('language') or '').strip().lower()
     aliases = {'en': {'en', 'english'}, 'pl': {'pl', 'polish', 'polski'}}
     if language and language not in aliases.get(p.language, {p.language}):

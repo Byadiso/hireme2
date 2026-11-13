@@ -10,7 +10,7 @@ from hiremed.core import cv_text,profile_from_cv
 from hiremed.storage import save_profile,load_profile,delete_profile
 from hiremed.discovery import discover
 from hiremed.freshness import freshness
-from hiremed.preferences import Preferences, load_preferences, save_preferences
+from hiremed.preferences import Preferences, load_preferences, save_preferences, evaluate
 from hiremed.agent import run_agent, recent_actions, record_feedback, load_draft, load_run_report
 from hiremed.repository import list_jobs,get_job,set_status
 from hiremed.documents import draft_application,draft_docx
@@ -179,6 +179,7 @@ report=load_run_report()
 if report:
     st.markdown('#### Latest agent report')
     st.caption(f"Completed: {report['finished_at']} · Run: {report.get('run_type', 'career agent')} · Search planner: {report['planner']}")
+    st.caption('This saved report reflects the last completed run. Run discovery again to apply updated language filters and refresh its counts.')
     st.info(report['headline'])
     x1,x2,x3,x4,x5=st.columns(5)
     x1.metric('Discovered this run',report['total'])
@@ -188,7 +189,7 @@ if report:
     x5.metric('Rejected',report['rejected'])
     st.write('**What to do next:**',report['next_step'])
     if report['blockers']:
-        st.write('**Most common reasons jobs did not qualify:**')
+        st.write('**What needs checking before applying:**')
         for blocker in report['blockers']:
             st.write(f"- {blocker['reason']} ({blocker['count']} job(s))")
     if report['highlights']:
@@ -222,7 +223,14 @@ def generate_tailored_packages():
     original=st.session_state.get('original_cv_text')
     if not original:
         return 0
-    candidates=[j for j in list_jobs() if freshness(j)['allowed'] and float(j.get('score') or 0)>=tailor_threshold]
+    candidates=[]
+    for j in list_jobs():
+        if not freshness(j)['allowed'] or float(j.get('score') or 0)<tailor_threshold:
+            continue
+        full = get_job(j['id']) or {}
+        if evaluate({**j, **full}, load_preferences())['rejected']:
+            continue
+        candidates.append(j)
     candidates.sort(key=lambda j: float(j.get('score') or 0), reverse=True)
     packages=st.session_state.setdefault('tailored_packages', {})
     created=0
@@ -295,10 +303,14 @@ else:
     a.metric('Jobs found',len(df))
     b.metric('Verified matches',int(df['eligible'].sum()))
     c.metric('Submitted',int((df['status']=='submitted').sum()))
-    status_filter=st.selectbox('Show jobs',['All','Verified matches','Needs review','Submitted'])
+    status_filter=st.selectbox('Show jobs',['Relevant jobs','All (including rejected)','Verified matches','Needs review','Rejected','Submitted'])
+    rejected_ids = {j['id'] for j in jobs
+                    if evaluate({**j, **(get_job(j['id']) or {})}, current_prefs)['rejected']}
     filtered=df
-    if status_filter=='Verified matches':filtered=df[df['eligible']==1]
-    elif status_filter=='Needs review':filtered=df[(df['eligible']==0)&(df['status']!='submitted')]
+    if status_filter=='Relevant jobs': filtered=df[~df['id'].isin(rejected_ids)]
+    elif status_filter=='Rejected': filtered=df[df['id'].isin(rejected_ids)]
+    elif status_filter=='Verified matches':filtered=df[df['eligible']==1]
+    elif status_filter=='Needs review':filtered=df[(df['eligible']==0)&(df['status']!='submitted')&(~df['id'].isin(rejected_ids))]
     elif status_filter=='Submitted':filtered=df[df['status']=='submitted']
     st.dataframe(filtered[['title','company','posted_at','score','eligible','status','source','url']],
         column_config={'url':st.column_config.LinkColumn('Job link')},hide_index=True,use_container_width=True)

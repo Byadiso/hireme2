@@ -98,3 +98,63 @@ def jobs_from_csv(path):
     with open(path,encoding='utf-8-sig',newline='') as f:
         for row in csv.DictReader(f):
             url=row.get('url') or row.get('Link') or '';yield {'id':row.get('id') or 'csv:'+hashlib.sha256(url.encode()).hexdigest()[:16], 'title':row.get('title') or row.get('Title') or '', 'company':row.get('company') or row.get('Company') or '', 'url':url, 'description':row.get('description') or row.get('Description') or '', 'location':row.get('location') or '', 'salary_monthly_gross_pln':row.get('salary_monthly_gross_pln') or None,'language':row.get('language') or None,'arrangement':row.get('arrangement') or None, 'source':'csv','posted_at':row.get('posted_at') or row.get('date_posted') or row.get('created') or row.get('published_at'),'original_posted_at':row.get('original_posted_at')}
+
+
+def jobs_from_remotive(roles, limit=10, country='PL'):
+    """Optional English-oriented remote feed; preserves source attribution.
+
+    Remotive's publication timestamps lack a timezone; their documented feed
+    dates are interpreted as UTC for the existing seven-day freshness gate.
+    Candidate location restrictions are checked conservatively.
+    """
+    from datetime import datetime, timezone
+    from html import unescape
+    results = {}
+    for role in list(dict.fromkeys(roles))[:5]:
+        try:
+            response = requests.get('https://remotive.com/api/remote-jobs',
+                                    params={'search': role, 'limit': max(1, min(int(limit), 30))},
+                                    headers={'User-Agent': 'HireMeD/3.3 (personal job search)'}, timeout=20)
+            response.raise_for_status()
+            for item in response.json().get('jobs', []):
+                location = str(item.get('candidate_required_location') or '').strip()
+                # Remote does not mean available to candidates in every country.
+                loc = location.lower()
+                supported = ('worldwide', 'anywhere', 'global', 'europe', 'eu',
+                             'emea', 'poland', 'polska')
+                if country.upper() == 'PL' and loc and not any(re.search(r'(?<![a-z])' + re.escape(x) + r'(?![a-z])', loc) for x in supported):
+                    continue
+                raw_date = str(item.get('publication_date') or '')
+                if not raw_date: continue
+                try:
+                    dt = datetime.fromisoformat(raw_date.replace('Z', '+00:00'))
+                    if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    continue
+                url = str(item.get('url') or '')
+                if not url.startswith('https://remotive.com/'): continue
+                jid = 'remotive:' + str(item.get('id') or hashlib.sha256(url.encode()).hexdigest()[:16])
+                description = unescape(re.sub(r'<[^>]+>', ' ', str(item.get('description') or '')))
+                results[jid] = {'id': jid, 'title': str(item.get('title') or ''),
+                    'company': str(item.get('company_name') or ''), 'url': url,
+                    'description': re.sub(r'\s+', ' ', description).strip(),
+                    'location': location or 'Remote', 'salary_monthly_gross_pln': None,
+                    'language': None, 'arrangement': 'remote', 'source': 'Remotive',
+                    'country': country.upper(), 'posted_at': dt.isoformat(),
+                    'original_posted_at': None}
+        except (requests.RequestException, ValueError, TypeError) as exc:
+            LOG.warning('Remotive query failed for %s: %s', role, type(exc).__name__)
+    return list(results.values())
+
+
+def jobs_from_sources(roles, limit=10, country='PL'):
+    """Use Adzuna by default; enable Remotive with JOB_SOURCES=adzuna,remotive."""
+    sources = {x.strip().lower() for x in os.getenv('JOB_SOURCES', 'adzuna').split(',') if x.strip()}
+    if not sources or sources - {'adzuna', 'remotive'}:
+        raise ValueError('JOB_SOURCES must contain adzuna and/or remotive')
+    results = {}
+    if 'adzuna' in sources:
+        for job in jobs_from_adzuna(roles, limit=limit, country=country): results[job['id']] = job
+    if 'remotive' in sources:
+        for job in jobs_from_remotive(roles, limit=limit, country=country): results[job['id']] = job
+    return list(results.values())

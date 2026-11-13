@@ -46,14 +46,57 @@ def cv_links(original):
         if parsed.hostname and url not in links: links.append(url)
     return links[:24]
 
-def _docx_link(paragraph, url):
+def _docx_link(paragraph, url, label=None):
     rel=paragraph.part.relate_to(url, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink', is_external=True)
     hyperlink=OxmlElement('w:hyperlink');hyperlink.set(qn('r:id'),rel)
     run=OxmlElement('w:r');properties=OxmlElement('w:rPr')
     color=OxmlElement('w:color');color.set(qn('w:val'),'0563C1');properties.append(color)
     underline=OxmlElement('w:u');underline.set(qn('w:val'),'single');properties.append(underline)
-    run.append(properties);node=OxmlElement('w:t');node.text=url;run.append(node)
+    run.append(properties);node=OxmlElement('w:t');node.text=label or url;run.append(node)
     hyperlink.append(run);paragraph._p.append(hyperlink)
+
+def _header_links(line, links):
+    """Find GitHub/LinkedIn labels in contact line and match explicit CV URLs."""
+    github = next((u for u in links if urlparse(u).hostname in ('github.com', 'www.github.com')
+                   and len(urlparse(u).path.strip('/').split('/')) == 1), None)
+    linkedin = next((u for u in links if 'linkedin.com/in/' in u.lower()), None)
+    targets = {}
+    if github and re.search(r'\bGitHub\b', line, re.I): targets['GitHub'] = github
+    if linkedin and re.search(r'\bLinkedIn\b', line, re.I): targets['LinkedIn'] = linkedin
+    return targets
+
+
+def _add_contact_docx(paragraph, line, links):
+    targets = _header_links(line, links)
+    if not targets:
+        paragraph.add_run(line); return set()
+    pattern = re.compile(r'\b(GitHub|LinkedIn)\b', re.I)
+    pos = 0
+    for match in pattern.finditer(line):
+        paragraph.add_run(line[pos:match.start()])
+        target = targets.get('LinkedIn' if match.group(0).lower() == 'linkedin' else 'GitHub')
+        if target: _docx_link(paragraph, target, label=match.group(0))
+        else: paragraph.add_run(match.group(0))
+        pos = match.end()
+    paragraph.add_run(line[pos:])
+    return set(targets.values())
+
+
+def _contact_pdf(line, links):
+    targets = _header_links(line, links)
+    if not targets: return escape(line), set()
+    parts=[]; pos=0
+    for match in re.finditer(r'\b(GitHub|LinkedIn)\b', line, re.I):
+        parts.append(escape(line[pos:match.start()]))
+        target = targets.get('LinkedIn' if match.group(0).lower() == 'linkedin' else 'GitHub')
+        if target:
+            parts.append('<link href="' + escape(target, {'"': '&quot;'}) +
+                         '" color="#0057b8">' + escape(match.group(0)) + '</link>')
+        else: parts.append(escape(match.group(0)))
+        pos=match.end()
+    parts.append(escape(line[pos:]))
+    return ''.join(parts), set(targets.values())
+
 
 def resume_lines(original):
     if not isinstance(original, str) or not original.strip():
@@ -207,13 +250,14 @@ def to_docx(package):
     if len(header) > 1:
         p = doc.add_paragraph(header[1]); p.paragraph_format.space_after = Pt(3)
         for r in p.runs: r.font.size = Pt(10)
+    linked = set()
     for item in header[2:]:
-        doc.add_paragraph(item)
-    if package.get('links'):
-        p=doc.add_paragraph('PORTFOLIO & PROFILES  ')
-        for index, url in enumerate(package['links']):
-            if index: p.add_run('  |  ')
-            _docx_link(p, url)
+        linked.update(_add_contact_docx(doc.add_paragraph(), item, package.get('links', [])))
+    remaining = [url for url in package.get('links', []) if url not in linked]
+    if remaining:
+        doc.add_heading('PORTFOLIO & PROFILES', 1)
+        for url in remaining:
+            _docx_link(doc.add_paragraph(), url)
     if package['summary']:
         doc.add_heading('PROFESSIONAL SUMMARY', 1)
         doc.add_paragraph(package['summary'])
@@ -254,10 +298,15 @@ def to_pdf(package):
         story.append(Paragraph(escape(value), style))
     header = package['header']
     para(header[0], title)
-    for line in header[1:]: para(line)
-    if package.get('links'):
+    linked = set()
+    for line in header[1:]:
+        markup, used = _contact_pdf(line, package.get('links', []))
+        story.append(Paragraph(markup, base))
+        linked.update(used)
+    remaining = [url for url in package.get('links', []) if url not in linked]
+    if remaining:
         para('PORTFOLIO & PROFILES', section)
-        for url in package['links']:
+        for url in remaining:
             story.append(Paragraph('<link href="' + escape(url, {'"': '&quot;'}) + '" color="#0057b8">' + escape(url) + '</link>', base))
     def heading(label): para(label, section)
     if package['summary']:

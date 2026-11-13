@@ -9,7 +9,7 @@ import re
 from datetime import datetime, timezone
 from collections import Counter
 
-from .core import assess, jobs_from_adzuna, jobs_from_csv, llm_json
+from .core import assess, jobs_from_sources, jobs_from_csv, llm_json
 from .preferences import evaluate, load_preferences
 from .repository import save, connection
 from .freshness import freshness
@@ -141,7 +141,7 @@ def run_agent(profile, *, limit=8, csv_path=None, max_jobs=20, prepare_drafts=Fa
     if csv_path:
         jobs = list(jobs_from_csv(csv_path))[:max_jobs]
     else:
-        jobs = jobs_from_adzuna(plan['queries'], limit=limit, country=p.country)[:max_jobs]
+        jobs = jobs_from_sources(plan['queries'], limit=limit, country=p.country)[:max_jobs]
     retrieved_count = len(jobs)
     jobs = [job for job in jobs if freshness(job)['allowed']]
     for job in jobs:
@@ -209,7 +209,8 @@ def summarize_run(plan, results, *, drafts_created=0, strong_match_threshold=80,
         except (ValueError, TypeError):
             return 0.0
     ranked = sorted(results, key=score, reverse=True)
-    strong = [r for r in ranked if score(r) >= threshold]
+    strong = [r for r in ranked if score(r) >= threshold and r.get('outcome') != 'rejected']
+    ranked = [r for r in ranked if r.get('outcome') != 'rejected']
     highlights = [
         {'id': str(r.get('job', {}).get('id', '')),
          'title': str(r.get('job', {}).get('title', 'Untitled'))[:120],
@@ -233,12 +234,25 @@ def summarize_run(plan, results, *, drafts_created=0, strong_match_threshold=80,
     else:
         headline = f'Discovered {total} vacancies, but none scored {threshold}+ or were verified eligible.'
         advice = 'Review the best available matches and missing requirements, or broaden your search.'
+    # Show actionable, grouped reasons rather than irrelevant individual skills.
+    def category(reason):
+        value = reason.lower()
+        if 'language' in value or 'polish' in value or 'język' in value:
+            return 'Language requirement not met or not confirmed'
+        if 'salary' in value: return 'Salary not confirmed or below minimum'
+        if 'arrangement' in value or 'on-site' in value: return 'Remote/hybrid arrangement not confirmed'
+        if 'country' in value or 'location' in value: return 'Location eligibility unclear'
+        return None
+    clear_blockers = Counter()
+    for reason, count in blockers.items():
+        group = category(reason)
+        if group: clear_blockers[group] += count
     return {'finished_at': _now(), 'run_type': run_type, 'headline': headline,
             'next_step': advice, 'total': total, 'strong_matches': len(strong),
             'strong_match_threshold': threshold, 'eligible': counts['eligible'],
             'review': counts['review'], 'rejected': counts['rejected'],
             'drafts_created': drafts_created,
-            'blockers': [{'reason': reason, 'count': count} for reason, count in blockers.most_common(5)],
+            'blockers': [{'reason': reason, 'count': count} for reason, count in clear_blockers.most_common(4)],
             'highlights': highlights, 'queries': plan.get('queries', []),
             'planner': plan.get('planner', 'unknown')}
 

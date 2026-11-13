@@ -43,7 +43,7 @@ def test_high_score_unverified_is_reported_as_strong_match():
 def test_rejected_high_score_remains_visible_but_not_eligible():
     results = [{'outcome': 'rejected', 'job': {'id': 'x', 'title': 'Specialist'}, 'assessment': {'score': 85}, 'policy': {'reasons': ['On-site only'], 'unknown': []}}]
     report = agent.summarize_run({'queries': []}, results)
-    assert report['strong_matches'] == 1
+    assert report['strong_matches'] == 0
     assert report['eligible'] == 0
     assert report['rejected'] == 1
 

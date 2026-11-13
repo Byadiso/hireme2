@@ -1,78 +1,26 @@
-
 name: HireMeD Scheduled Discovery
-
 on:
   workflow_dispatch:
   schedule:
     - cron: '0 7 * * *'
-
 permissions:
   contents: read
-
 jobs:
   discover:
     runs-on: ubuntu-latest
     environment: GEMINI_API_KEY
     timeout-minutes: 20
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Check configuration
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
-          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
-        run: |
-          python - <<'PY'
-          import os
-
-          required = [
-              "DATABASE_URL",
-              "GROQ_API_KEY",
-              "ADZUNA_APP_ID",
-              "ADZUNA_APP_KEY",
-          ]
-
-          missing = [key for key in required if not os.getenv(key)]
-
-          if missing:
-              raise SystemExit("Missing secrets: " + ", ".join(missing))
-
-          print("All required secrets are configured.")
-          PY
-
-      - name: Check Supabase CV profile
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          python - <<'PY'
-          from hiremed.storage import load_profile
-
-          profile = load_profile()
-
-          if not profile:
-              raise SystemExit(
-                  "Database connected, but no saved CV profile found. "
-                  "Upload and analyze your CV using the same "
-                  "DATABASE_URL in your local dashboard."
-              )
-
-          print("CV profile found successfully.")
-          PY
-
+      - run: pip install -r requirements.txt
       - name: Discover and evaluate (NO SUBMISSION)
         env:
           AI_PROVIDER: groq
+          JOB_SOURCES: adzuna,remotive
           AI_FALLBACK_PROVIDER: gemini
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
